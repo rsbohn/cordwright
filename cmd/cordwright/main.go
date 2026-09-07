@@ -18,7 +18,9 @@ func (h *hosts) Set(value string) error { *h = append(*h, value); return nil }
 func run(args []string, in io.Reader, out, diagnostics io.Writer, terminal bool) int {
 	flags := flag.NewFlagSet("cordwright", flag.ContinueOnError)
 	flags.SetOutput(diagnostics)
-	var mounts hosts
+	var mounts, images hosts
+	flags.Var(&images, "hawk", "mount a read-only Hawk image as NAME=PATH (repeatable)")
+	stride := flags.Int("stride", 512, "record size for -hawk images: 400 or 512")
 	flags.Var(&mounts, "host", "mount a read-only host folder as NAME=PATH (repeatable)")
 	batch := flags.Bool("batch", false, "read commands without a prompt")
 	personality := flags.String("personality", "unix", "shell personality (unix)")
@@ -43,6 +45,18 @@ func run(args []string, in io.Reader, out, diagnostics io.Writer, terminal bool)
 			name = "/" + name
 		}
 		if err := sh.MountHost(source, name); err != nil {
+			return fail(err)
+		}
+	}
+	for _, spec := range images {
+		name, source, ok := strings.Cut(spec, "=")
+		if !ok || name == "" || source == "" {
+			return fail(fmt.Errorf("-hawk expects NAME=PATH"))
+		}
+		if !strings.HasPrefix(name, "/") {
+			name = "/" + name
+		}
+		if err := sh.MountHawk(source, name, *stride); err != nil {
 			return fail(err)
 		}
 	}

@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"path"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/rsbohn/cordwright/internal/media"
@@ -18,6 +19,11 @@ import (
 const Help = `Cordwright — read-only Unix personality
   mount                         List mounted drives
   mount HOST-DIRECTORY /NAME     Mount a host folder read-only
+  mount -t hawk [-stride 400|512] IMAGE /NAME
+                                Mount an experimental Hawk image read-only
+  text [--] FILE                Decode Hawk high-bit ASCII (lossy view)
+  sectors [--] FILE             Show allocation-order sector numbers
+  sector /NAME NUMBER           Hex dump image record (decimal or 0xHEX)
   umount /NAME                  Unmount a drive
   pwd                           Show virtual working directory
   cd [PATH]                     Change directory (default /)
@@ -60,6 +66,12 @@ func mountName(point string) (string, error) {
 }
 
 func (s *Unix) MountHost(source, point string) error {
+	return s.mount(point, func() (media.Drive, error) { return media.OpenHost(source) })
+}
+func (s *Unix) MountHawk(source, point string, stride int) error {
+	return s.mount(point, func() (media.Drive, error) { return media.OpenHawk(source, stride) })
+}
+func (s *Unix) mount(point string, open func() (media.Drive, error)) error {
 	name, err := mountName(point)
 	if err != nil {
 		return err
@@ -67,7 +79,7 @@ func (s *Unix) MountHost(source, point string) error {
 	if _, ok := s.drives[name]; ok {
 		return fmt.Errorf("%s: already mounted", point)
 	}
-	drive, err := media.OpenHost(source)
+	drive, err := open()
 	if err != nil {
 		return err
 	}
@@ -139,6 +151,25 @@ func (s *Unix) Execute(args []string, out io.Writer) (bool, error) {
 			}
 			return false, nil
 		}
+		if len(args) >= 2 && args[0] == "-t" {
+			if args[1] != "hawk" {
+				return false, fmt.Errorf("unsupported mount type %q", args[1])
+			}
+			args = args[2:]
+			stride := 512
+			if len(args) >= 2 && args[0] == "-stride" {
+				n, err := strconv.Atoi(args[1])
+				if err != nil {
+					return false, err
+				}
+				stride = n
+				args = args[2:]
+			}
+			if len(args) != 2 {
+				return usage("mount -t hawk [-stride 400|512] IMAGE /NAME")
+			}
+			return false, s.MountHawk(args[0], args[1], stride)
+		}
 		if len(args) != 2 {
 			return usage("mount HOST-DIRECTORY /NAME")
 		}
@@ -205,6 +236,76 @@ func (s *Unix) Execute(args []string, out io.Writer) (bool, error) {
 			target = s.absolute(args[0])
 		}
 		return false, s.list(target, long, out)
+	case "sector":
+		if len(args) != 2 {
+			return usage("sector /NAME NUMBER")
+		}
+		point := s.absolute(args[0])
+		if _, err := mountName(point); err != nil {
+			return false, err
+		}
+		drive, _, err := s.resolve(point)
+		if err != nil {
+			return false, err
+		}
+		reader, ok := drive.(media.SectorReader)
+		if !ok {
+			return false, fmt.Errorf("drive has no sector view")
+		}
+		number := args[1]
+		base := 10
+		if strings.HasPrefix(number, "0x") || strings.HasPrefix(number, "0X") {
+			base = 16
+			number = number[2:]
+		}
+		n, err := strconv.ParseInt(number, base, 64)
+		if err != nil {
+			return false, err
+		}
+		b, err := reader.Sector(n)
+		if err != nil {
+			return false, err
+		}
+		_, err = io.WriteString(out, hex.Dump(b))
+		return false, err
+	case "text", "sectors":
+		args, err := operands(args)
+		if err != nil {
+			return false, err
+		}
+		if len(args) != 1 {
+			return usage(cmd + " [--] FILE")
+		}
+		drive, name, err := s.resolve(args[0])
+		if err != nil {
+			return false, err
+		}
+		if cmd == "text" {
+			reader, ok := drive.(media.TextReader)
+			if !ok {
+				return false, fmt.Errorf("drive has no text decoder; use cat for raw bytes")
+			}
+			text, err := reader.Text(name)
+			if err != nil {
+				return false, err
+			}
+			_, err = io.WriteString(out, text)
+			return false, err
+		}
+		reader, ok := drive.(media.AllocationReader)
+		if !ok {
+			return false, fmt.Errorf("drive has no allocation map")
+		}
+		sectors, err := reader.Sectors(name)
+		if err != nil {
+			return false, err
+		}
+		for i, n := range sectors {
+			if _, err := fmt.Fprintf(out, "%d: %d (0x%X)\n", i, n, n); err != nil {
+				return false, err
+			}
+		}
+		return false, nil
 	case "stat", "cat", "hex":
 		args, err := operands(args)
 		if err != nil {

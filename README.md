@@ -5,11 +5,13 @@ blocks to filesystems and decoded content.
 
 ## Status
 
-Initial Go implementation: read-only host-folder drives and a Unix-style shell.
-Hawk image support from the CPU6.dos shell in
-[tricorn](https://github.com/rsbohn/tricorn) has not yet been migrated. Disk/tape
-image drivers, raw sector/record operations, and persistent mount tables are not
-implemented yet.
+Initial Go implementation: read-only host-folder drives, an experimental Hawk
+Disk6 driver, a synthetic Hawk image generator, and a Unix-style shell. Hawk
+layout knowledge comes from CPU6.dos in [tricorn](https://github.com/rsbohn/tricorn).
+Nested Hawk libraries, tape drivers, and persistent mount tables are not yet
+implemented.
+
+See the [quick reference](docs/quickref.md) for commands and examples.
 
 ## Run
 
@@ -96,6 +98,31 @@ check. Host folders are live views, not snapshots. Cordwright issues no content
 writes; normal host filesystem read effects such as access-time updates may
 still occur.
 
+## Try a synthetic Hawk image
+
+```sh
+mkdir -p out
+go run ./cmd/hawk-demo out/demo-hawk.img
+go run ./cmd/cordwright -hawk hawk=out/demo-hawk.img
+```
+
+```text
+ls /hawk
+text /hawk/README
+text /hawk/NOTES
+hex /hawk/HELLO
+sectors /hawk/NOTES
+sector /hawk 0x0E
+```
+
+`cat` still returns exact allocated payload bytes; `text` is an explicit lossy
+high-bit ASCII view. `sector` includes container padding, while `sectors` shows
+file allocation order. These capabilities are unavailable on host-folder drives.
+
+See [Hawk support and demo format](docs/hawk.md) for mount syntax, packed images,
+format assumptions, and limitations. The demo is a **non-bootable reader fixture**,
+not a disk formatter or a reconstruction of CENTOS.
+
 ## Development
 
 ```sh
@@ -104,9 +131,11 @@ go test -race ./...
 go vet ./...
 ```
 
-`internal/media` defines the read-only filesystem drive interface and host
-adapter. `internal/shell` implements the Unix personality separately from that
-adapter. `cmd/cordwright` wires startup mounts and CLI/batch/interactive modes.
+`internal/media` defines the read-only filesystem drive interface, optional
+image capabilities, and host adapter. `internal/hawk` implements the Hawk driver
+and deterministic demo layout. `internal/shell` implements the Unix personality
+separately from the drivers. `cmd/cordwright` wires startup mounts and
+CLI/batch/interactive modes; `cmd/hawk-demo` generates synthetic fixtures.
 
 ## The workbench
 
@@ -153,17 +182,14 @@ not imply recognizing the filesystem or application records inside it.
 - **Respect historical data.** Use synthetic test fixtures and avoid publishing
   personal or business records recovered from original media.
 
-## Initial roadmap
+## Next steps
 
-1. Separate Hawk image access, allocation traversal, and text interpretation from
-   the existing CPU6.dos backend.
-2. Introduce byte-preserving file extraction and allocation provenance while
-   keeping CPU6.dos commands usable.
-3. Add neutral file metadata, hex inspection, and extraction operations.
-4. Add a record-oriented tape container, such as SIMH `.tap`, to test the design
-   against a genuinely different medium.
-5. Extend format support as evidence, documentation, and synthetic tests become
-   available.
+- Extend Hawk support to nested libraries and collect more format evidence.
+- Add a dedicated extraction command; currently one-shot `cat` can be redirected
+  by the host shell to preserve allocated file payloads.
+- Add a record-oriented tape container, such as SIMH `.tap`, to test the design
+  against a genuinely different medium.
+- Extend format support as documentation and synthetic tests become available.
 
 Persistent mount configuration can build on CPU6.dos's manually edited,
 read-only `fstab` approach. Current mounts are session-only; Cordwright does not

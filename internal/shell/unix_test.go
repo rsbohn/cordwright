@@ -3,6 +3,7 @@ package shell
 import (
 	"bytes"
 	"errors"
+	"github.com/rsbohn/cordwright/internal/hawk"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -179,5 +180,44 @@ func TestOutputErrors(t *testing.T) {
 		if _, err := sh.Execute(args, failingWriter{}); err == nil {
 			t.Errorf("lost output error: %s", line)
 		}
+	}
+}
+
+func TestHawkCommands(t *testing.T) {
+	sh, _ := fixture(t)
+	image, err := hawk.DemoImage(512)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := filepath.Join(t.TempDir(), "demo hawk.img")
+	if err := os.WriteFile(source, image, 0600); err != nil {
+		t.Fatal(err)
+	}
+	command(t, sh, "mount -t hawk '"+source+"' /hawk")
+	if got := command(t, sh, "ls /hawk"); got != "HELLO\nNOTES\nNUMBERS\nREADME\n" {
+		t.Fatal(got)
+	}
+	if got := command(t, sh, "text /hawk/HELLO"); got != "HELLO FROM CORDWRIGHT!\n" {
+		t.Fatal(got)
+	}
+	if got := command(t, sh, "cat /hawk/HELLO"); !bytes.Equal([]byte(got), image[33*512:33*512+400]) {
+		t.Fatal("cat decoded bytes")
+	}
+	if got := command(t, sh, "sector /hawk 0x21"); !strings.Contains(got, "c8 c5 cc cc cf") || !strings.Contains(got, "000001f0") {
+		t.Fatal(got)
+	}
+	if got := command(t, sh, "sectors /hawk/NOTES"); got != "0: 34 (0x22)\n1: 40 (0x28)\n2: 35 (0x23)\n" {
+		t.Fatal(got)
+	}
+	for _, line := range []string{"sector /hawk -1", "sector /hawk 12992", "sector /hawk/HELLO 0", "sector /h0 0", "sectors /h0/raw", "text /h0/raw", "mount -t other x /x", "mount -t hawk -stride 12 x /x"} {
+		args, _ := Words(line)
+		if _, err := sh.Execute(args, &bytes.Buffer{}); err == nil {
+			t.Fatalf("accepted %s", line)
+		}
+	}
+	command(t, sh, "cd /hawk")
+	command(t, sh, "umount /hawk")
+	if sh.Pwd() != "/" {
+		t.Fatal(sh.Pwd())
 	}
 }

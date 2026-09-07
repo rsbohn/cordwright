@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"github.com/rsbohn/cordwright/internal/hawk"
 	"os"
 	"path/filepath"
 	"strings"
@@ -39,5 +40,21 @@ func TestCLI(t *testing.T) {
 				t.Fatal("no diagnostic")
 			}
 		})
+	}
+}
+
+func TestHawkCLI(t *testing.T) {
+	image, err := hawk.DemoImage(400)
+	if err != nil {
+		t.Fatal(err)
+	}
+	name := filepath.Join(t.TempDir(), "demo.img")
+	if err := os.WriteFile(name, image, 0600); err != nil {
+		t.Fatal(err)
+	}
+	var out, diagnostics bytes.Buffer
+	code := run([]string{"-hawk", "h2=" + name, "-stride", "400", "text", "/h2/HELLO"}, strings.NewReader(""), &out, &diagnostics, false)
+	if code != 0 || out.String() != "HELLO FROM CORDWRIGHT!\n" {
+		t.Fatalf("%d %q %q", code, out.String(), diagnostics.String())
 	}
 }
