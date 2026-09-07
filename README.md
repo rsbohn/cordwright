@@ -1,5 +1,7 @@
 # Cordwright
 
+> **Note:** This software is built with the assistance of AI tools.
+
 A retro-media workbench for disk and tape images, from sectors, records, and
 blocks to filesystems and decoded content.
 
