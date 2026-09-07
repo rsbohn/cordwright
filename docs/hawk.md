@@ -113,8 +113,10 @@ Cordwright itself never opens mounted images for writing.
 - Explicit Hawk mounting; no automatic type or stride detection.
 - Fixed catalog location at sector 16, following observed CPU6.dos images.
   Arbitrary control-derived catalog locations are not supported yet.
-- Flat top-level directory. Library containers remain raw files, not navigable
-  subdirectories; no dot-member shortcut is implemented.
+- Hawk library files with simple 16-byte catalogs are exposed as subdirectories
+  (for example `/hawk/S`, `/hawk/P`, `/hawk/USAGI`). Library members are byte
+  ranges in the parent library's allocated payload, using 200-byte page starts;
+  the dot-member shortcut is not implemented.
 - Positive allocation starts expand by `1 << FSI shift`; continuation locations
   are UAL-relative sector/index references. Allocation order is preserved.
 - Images must be regular files made of complete 400- or 512-byte records, at most

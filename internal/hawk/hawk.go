@@ -1,6 +1,7 @@
 // Package hawk implements an experimental, read-only Disk6 filesystem view.
 // Layout and allocation rules follow tricorn's CPU6.dos reader and its Hawk
-// notes. Only the sector-16 top-level catalog is supported, not nested libraries.
+// notes. The sector-16 top-level catalog and simple Hawk library catalogs are
+// supported read-only.
 package hawk
 
 import (
@@ -23,6 +24,11 @@ const (
 type entry struct {
 	name    string
 	sectors []int64
+	parent  string
+	start   int
+	end     int
+	dir     bool
+	kids    map[string]bool
 }
 
 type Drive struct {
@@ -53,6 +59,9 @@ func Open(source string, stride int) (*Drive, error) {
 	if err == nil {
 		d.count = info.Size() / int64(stride)
 		err = d.catalog()
+		if err == nil {
+			err = d.libraries()
+		}
 	}
 	if err != nil {
 		f.Close()
@@ -131,7 +140,7 @@ func (d *Drive) catalog() error {
 			if err != nil {
 				return fmt.Errorf("file %s: %w", name, err)
 			}
-			d.entries[name] = entry{name, sectors}
+			d.entries[name] = entry{name: name, sectors: sectors}
 		}
 	}
 	return fmt.Errorf("unterminated Hawk catalog")
@@ -197,6 +206,100 @@ func (d *Drive) allocation(base, mapSector int64, index int) ([]int64, error) {
 	return sectors, nil
 }
 
+func (d *Drive) libraries() error {
+	names := make([]string, 0, len(d.entries))
+	for name := range d.entries {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		e := d.entries[name]
+		members, ok, err := d.libraryEntries(e)
+		if err != nil {
+			return fmt.Errorf("library %s: %w", name, err)
+		}
+		if !ok {
+			continue
+		}
+		e.dir = true
+		e.kids = map[string]bool{}
+		d.entries[name] = e
+		for _, m := range members {
+			full := name + "/" + m.name
+			if _, exists := d.entries[full]; exists {
+				return fmt.Errorf("duplicate library path %q", full)
+			}
+			m.parent = name
+			d.entries[full] = m
+			e.kids[m.name] = true
+		}
+		d.entries[name] = e
+	}
+	return nil
+}
+
+type libraryMember struct {
+	name  string
+	start int
+}
+
+func (d *Drive) libraryEntries(lib entry) ([]entry, bool, error) {
+	data, err := d.entryData(lib)
+	if err != nil {
+		return nil, false, err
+	}
+	if len(data) < 32 || !blankName(data[:10]) {
+		return nil, false, nil
+	}
+	totalPages := len(data) / 200
+	rows := []libraryMember{}
+	baseHigh := -1
+	for off, scanned := 16, 0; off+16 <= len(data) && scanned < 800; off, scanned = off+16, scanned+1 {
+		row := data[off : off+16]
+		if row[0] == 0x84 && row[1] == 0x8d || row[0] == 0 || blankName(row[:10]) {
+			break
+		}
+		name, err := decodeName(row[:10])
+		if err != nil {
+			return nil, false, nil
+		}
+		if baseHigh < 0 {
+			baseHigh = int(row[12])
+		}
+		start := int(row[10]) + (int(row[12])-baseHigh)*128
+		if start < 0 || start >= totalPages || len(rows) > 0 && start < rows[len(rows)-1].start {
+			return nil, false, nil
+		}
+		rows = append(rows, libraryMember{name, start})
+	}
+	if len(rows) == 0 {
+		return nil, false, nil
+	}
+	members := make([]entry, 0, len(rows))
+	seen := map[string]bool{}
+	for i, r := range rows {
+		end := totalPages
+		if i+1 < len(rows) {
+			end = rows[i+1].start
+		}
+		if end < r.start || seen[r.name] {
+			return nil, false, nil
+		}
+		seen[r.name] = true
+		members = append(members, entry{name: r.name, sectors: lib.sectors, start: r.start * 200, end: end * 200})
+	}
+	return members, true, nil
+}
+
+func blankName(b []byte) bool {
+	for _, c := range b {
+		if c != 0 && c != 0xa0 && c != ' ' {
+			return false
+		}
+	}
+	return true
+}
+
 func decodeName(b []byte) (string, error) {
 	var name strings.Builder
 	for _, raw := range b {
@@ -240,18 +343,42 @@ func (d *Drive) Stat(name string) (fs.FileInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	return info{e.name, int64(len(e.sectors) * PayloadSize), false}, nil
+	size := int64(len(e.sectors) * PayloadSize)
+	if e.parent != "" {
+		size = int64(e.end - e.start)
+	}
+	return info{e.name, size, e.dir}, nil
 }
 func (d *Drive) ReadDir(name string) ([]fs.DirEntry, error) {
 	if _, err := d.Stat(name); err != nil {
 		return nil, err
 	}
-	if name != "." {
-		return nil, fmt.Errorf("%s: not a directory", name)
+	var list []entry
+	if name == "." {
+		for key, e := range d.entries {
+			if !strings.Contains(key, "/") {
+				list = append(list, e)
+			}
+		}
+	} else {
+		dir, err := d.lookup(name)
+		if err != nil {
+			return nil, err
+		}
+		if !dir.dir {
+			return nil, fmt.Errorf("%s: not a directory", name)
+		}
+		for child := range dir.kids {
+			list = append(list, d.entries[name+"/"+child])
+		}
 	}
-	entries := make([]fs.DirEntry, 0, len(d.entries))
-	for _, e := range d.entries {
-		entries = append(entries, fs.FileInfoToDirEntry(info{e.name, int64(len(e.sectors) * PayloadSize), false}))
+	entries := make([]fs.DirEntry, 0, len(list))
+	for _, e := range list {
+		size := int64(len(e.sectors) * PayloadSize)
+		if e.parent != "" {
+			size = int64(e.end - e.start)
+		}
+		entries = append(entries, fs.FileInfoToDirEntry(info{e.name, size, e.dir}))
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
 	return entries, nil
@@ -266,7 +393,17 @@ func (d *Drive) Sectors(name string) ([]int64, error) {
 	if err != nil {
 		return nil, err
 	}
-	return append([]int64(nil), e.sectors...), nil
+	if e.dir {
+		return nil, fmt.Errorf("%s: is a directory", name)
+	}
+	if e.parent == "" {
+		return append([]int64(nil), e.sectors...), nil
+	}
+	first, last := e.start/PayloadSize, (e.end-1)/PayloadSize
+	if e.end == e.start {
+		return nil, nil
+	}
+	return append([]int64(nil), e.sectors[first:last+1]...), nil
 }
 func (d *Drive) Open(name string) (fs.File, error) {
 	stat, err := d.Stat(name)
@@ -274,11 +411,20 @@ func (d *Drive) Open(name string) (fs.File, error) {
 		return nil, err
 	}
 	f := &file{info: stat}
-	if name == "." {
+	if stat.IsDir() {
 		f.entries, err = d.ReadDir(name)
 		return f, err
 	}
 	e, _ := d.lookup(name)
+	data, err := d.entryData(e)
+	if err != nil {
+		return nil, err
+	}
+	f.reader = bytes.NewReader(data)
+	return f, nil
+}
+
+func (d *Drive) entryData(e entry) ([]byte, error) {
 	data := make([]byte, 0, len(e.sectors)*PayloadSize)
 	for _, n := range e.sectors {
 		b, err := d.payload(n)
@@ -287,8 +433,13 @@ func (d *Drive) Open(name string) (fs.File, error) {
 		}
 		data = append(data, b...)
 	}
-	f.reader = bytes.NewReader(data)
-	return f, nil
+	if e.parent != "" {
+		if e.start < 0 || e.end < e.start || e.end > len(data) {
+			return nil, fmt.Errorf("library member bounds invalid")
+		}
+		data = data[e.start:e.end]
+	}
+	return data, nil
 }
 
 // Text is an explicit, lossy high-bit ASCII view: strip high bits and NUL

@@ -8,8 +8,8 @@ blocks to filesystems and decoded content.
 Initial Go implementation: read-only host-folder drives, an experimental Hawk
 Disk6 driver, a synthetic Hawk image generator, and a Unix-style shell. Hawk
 layout knowledge comes from CPU6.dos in [tricorn](https://github.com/rsbohn/tricorn).
-Nested Hawk libraries, tape drivers, and persistent mount tables are not yet
-implemented.
+Simple Hawk libraries are browsable as directories; tape drivers and persistent
+mount tables are not yet implemented.
 
 See the [quick reference](docs/quickref.md) for commands and examples.
 
@@ -184,7 +184,7 @@ not imply recognizing the filesystem or application records inside it.
 
 ## Next steps
 
-- Extend Hawk support to nested libraries and collect more format evidence.
+- Extend Hawk library support with more format evidence and edge cases.
 - Add a dedicated extraction command; currently one-shot `cat` can be redirected
   by the host shell to preserve allocated file payloads.
 - Add a record-oriented tape container, such as SIMH `.tap`, to test the design

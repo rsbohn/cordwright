@@ -117,6 +117,29 @@ func TestIndependentFSI(t *testing.T) {
 	}
 }
 
+func TestLibrary(t *testing.T) {
+	b := tinyImage()
+	// Replace A with a two-sector LIB file.
+	copy(b[16*512+16:], []byte{0xcc, 0xc9, 0xc2, 0xa0, 0xa0, 0xa0, 0xa0, 0xa0, 0xa0, 0xa0})
+	b[18*512], b[18*512+1] = 0, 1
+	// Library catalog: blank header, then two 200-byte page members.
+	copy(b[32*512+16:], []byte{0xc1, 0xa0, 0xa0, 0xa0, 0xa0, 0xa0, 0xa0, 0xa0, 0xa0, 0xa0, 2, 0, 0})
+	copy(b[32*512+32:], []byte{0xc2, 0xa0, 0xa0, 0xa0, 0xa0, 0xa0, 0xa0, 0xa0, 0xa0, 0xa0, 3, 0, 0})
+	copy(b[33*512:], bytes.Repeat([]byte{'A'}, 200))
+	copy(b[33*512+200:], bytes.Repeat([]byte{'B'}, 200))
+	d, err := Open(saveImage(t, b), 512)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	if err := fstest.TestFS(d, "LIB/A", "LIB/B"); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := fs.ReadFile(d, "LIB/B"); err != nil || len(got) != 200 || got[0] != 'B' {
+		t.Fatalf("len=%d err=%v", len(got), err)
+	}
+}
+
 func TestCorruptImagesRejected(t *testing.T) {
 	for _, tt := range []struct {
 		name   string

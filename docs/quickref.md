@@ -128,7 +128,7 @@ continuation. Its allocated payload size is 1,200 bytes.
 
 Hawk sizes are allocated sectors × 400, not inferred text lengths. Historical
 timestamps are unknown and shown as zero time. Library containers remain raw
-files; nested library browsing is not implemented.
+files. Simple Hawk libraries are browsable as subdirectories (for example `S`, `P`, and `USAGI` on observed images).
 
 For lossless allocated-payload export, use **host-shell** redirection:
 
