@@ -112,7 +112,7 @@ func (d *Drive) dirFile(name string) (fs.File, error) {
 }
 
 func (d *Drive) readme() []byte {
-	return []byte(fmt.Sprintf("TU56/DECtape container image\nSource: %s\nBlocks: %d\nBlock format: %d 12-bit words stored as big-endian 16-bit words (%d bytes).\nUse 'sector /MOUNT N' for the original container block, or read blocks/NNNN.bin.\nOS/8 filesystem decoding is not yet implemented.\n", d.source, d.blocks, WordsPerBlock, BytesPerBlock))
+	return []byte(fmt.Sprintf("TU56/DECtape SIMH container image\nSource: %s\nBlocks: %d\nBlock format: %d 12-bit words stored as little-endian 16-bit words (%d bytes).\nUse 'sector /MOUNT N' for the original container block, or read blocks/NNNN.bin.\nOS/8 filesystem decoding is not yet implemented.\n", d.source, d.blocks, WordsPerBlock, BytesPerBlock))
 }
 
 func clean(name string) string {
@@ -143,7 +143,7 @@ func octalDump(block int, raw []byte) []byte {
 		if (i/2)%8 == 0 {
 			fmt.Fprintf(&b, "%04o:", i/2)
 		}
-		w := int(raw[i])<<8 | int(raw[i+1])
+		w := int(raw[i+1])<<8 | int(raw[i])
 		fmt.Fprintf(&b, " %04o", w&07777)
 		if (i/2)%8 == 7 {
 			b.WriteByte('\n')
