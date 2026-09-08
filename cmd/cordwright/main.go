@@ -20,9 +20,10 @@ func run(args []string, in io.Reader, out, diagnostics io.Writer, terminal bool)
 	flags.SetOutput(diagnostics)
 	var mounts, images, tapes hosts
 	flags.Var(&images, "hawk", "mount a read-only Hawk image as NAME=PATH (repeatable)")
-	flags.Var(&tapes, "tu56", "mount a read-only TU56/DECtape image as NAME=PATH (repeatable)")
+	flags.Var(&tapes, "tu56", "mount a read-only SIMH OS/8 TU56 image as NAME=PATH (repeatable)")
 	stride := flags.Int("stride", 512, "record size for -hawk images: 400 or 512")
 	flags.Var(&mounts, "host", "mount a read-only host folder as NAME=PATH (repeatable)")
+	option := flags.String("o", "", "TU56 mount option: raw (all startup TU56 mounts)")
 	batch := flags.Bool("batch", false, "read commands without a prompt")
 	personality := flags.String("personality", "unix", "shell personality (unix)")
 	if err := flags.Parse(args); err != nil {
@@ -34,6 +35,9 @@ func run(args []string, in io.Reader, out, diagnostics io.Writer, terminal bool)
 	fail := func(err error) int { fmt.Fprintln(diagnostics, "cordwright:", err); return 1 }
 	if *personality != "unix" {
 		return fail(fmt.Errorf("unsupported personality %q", *personality))
+	}
+	if *option != "" && *option != "raw" {
+		return fail(fmt.Errorf("unsupported mount option %q", *option))
 	}
 	sh := shell.NewUnix()
 	defer sh.Close()
@@ -69,7 +73,11 @@ func run(args []string, in io.Reader, out, diagnostics io.Writer, terminal bool)
 		if !strings.HasPrefix(name, "/") {
 			name = "/" + name
 		}
-		if err := sh.MountTU56(source, name); err != nil {
+		mount := sh.MountTU56
+		if *option == "raw" {
+			mount = sh.MountTU56Raw
+		}
+		if err := mount(source, name); err != nil {
 			return fail(err)
 		}
 	}

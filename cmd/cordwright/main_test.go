@@ -68,8 +68,39 @@ func TestTU56CLI(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out, diagnostics bytes.Buffer
-	code := run([]string{"-tu56", "t0=" + name, "ls", "/t0"}, strings.NewReader(""), &out, &diagnostics, false)
+	code := run([]string{"-tu56", "t0=" + name, "-o", "raw", "ls", "/t0"}, strings.NewReader(""), &out, &diagnostics, false)
 	if code != 0 || out.String() != "README.txt\nblocks/\n" {
 		t.Fatalf("%d %q %q", code, out.String(), diagnostics.String())
+	}
+}
+
+func TestOS8Mounts(t *testing.T) {
+	image := make([]byte, 8*2*tu56.BytesPerBlock)
+	// One file occupying logical block 7: TEST.PA.
+	words := []uint16{07777, 7, 0, 0, 07777, 02405, 02324, 0, 02001, 0, 07777}
+	for i, w := range words {
+		image[2*tu56.BytesPerBlock+i*2] = byte(w)
+		image[2*tu56.BytesPerBlock+i*2+1] = byte(w >> 8)
+	}
+	name := filepath.Join(t.TempDir(), "test.tu56")
+	if err := os.WriteFile(name, image, 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		args        []string
+		input, want string
+		code        int
+	}{
+		{[]string{"-tu56", "t=" + name, "ls", "/t"}, "", "TEST.PA\n", 0},
+		{[]string{"-batch"}, "mount -t tu56 '" + name + "' /t\ncd /t\nls\nsectors TEST.PA\numount /t\npwd\n", "TEST.PA\n0: 14 (0xE)\n1: 15 (0xF)\n/\n", 0},
+		{[]string{"-batch"}, "mount -t tu56 -o raw '" + name + "' /t\nls /t\n", "README.txt\nblocks/\n", 0},
+		{[]string{"-o", "bogus", "-tu56", "t=" + name}, "", "", 1},
+		{[]string{"-batch"}, "mount -t tu56 -o bogus '" + name + "' /t\n", "", 1},
+	} {
+		var out, diag bytes.Buffer
+		code := run(tc.args, strings.NewReader(tc.input), &out, &diag, false)
+		if code != tc.code || out.String() != tc.want {
+			t.Fatalf("code=%d out=%q diagnostic=%q", code, out.String(), diag.String())
+		}
 	}
 }

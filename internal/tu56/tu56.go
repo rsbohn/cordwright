@@ -42,6 +42,9 @@ func (d *Drive) Description() string {
 func (d *Drive) Close() error { d.data = nil; return nil }
 
 func (d *Drive) Sector(n int64) ([]byte, error) {
+	if d.data == nil {
+		return nil, fs.ErrClosed
+	}
 	if n < 0 || n >= int64(d.blocks) {
 		return nil, fmt.Errorf("block %d: out of range", n)
 	}
@@ -50,14 +53,19 @@ func (d *Drive) Sector(n int64) ([]byte, error) {
 }
 
 func (d *Drive) Open(name string) (fs.File, error) {
-	name = clean(name)
+	if d.data == nil {
+		return nil, fs.ErrClosed
+	}
+	if !fs.ValidPath(name) {
+		return nil, &fs.PathError{Op: "lookup", Path: name, Err: fs.ErrInvalid}
+	}
 	if name == "." || name == "blocks" {
 		return d.dirFile(name)
 	}
 	if name == "README.txt" {
 		return newFile(info{"README.txt", int64(len(d.readme())), false}, d.readme()), nil
 	}
-	if strings.HasPrefix(name, "blocks/") {
+	if strings.HasPrefix(name, "blocks/") && strings.Count(name, "/") == 1 {
 		base := path.Base(name)
 		n, ok, text := parseBlockName(base)
 		if !ok || n < 0 || n >= d.blocks {
@@ -82,7 +90,12 @@ func (d *Drive) Stat(name string) (fs.FileInfo, error) {
 }
 
 func (d *Drive) ReadDir(name string) ([]fs.DirEntry, error) {
-	name = clean(name)
+	if d.data == nil {
+		return nil, fs.ErrClosed
+	}
+	if !fs.ValidPath(name) {
+		return nil, &fs.PathError{Op: "lookup", Path: name, Err: fs.ErrInvalid}
+	}
 	switch name {
 	case ".":
 		return []fs.DirEntry{info{"README.txt", int64(len(d.readme())), false}, info{"blocks", 0, true}}, nil
@@ -94,7 +107,7 @@ func (d *Drive) ReadDir(name string) ([]fs.DirEntry, error) {
 		}
 		for i := 0; i < d.blocks; i++ {
 			entries = append(entries, info{fmt.Sprintf("%0*d.bin", width, i), BytesPerBlock, false})
-			entries = append(entries, info{fmt.Sprintf("%0*d.oct", width, i), int64(8 * WordsPerBlock), false})
+			entries = append(entries, info{fmt.Sprintf("%0*d.oct", width, i), int64(len(octalDump(i, d.data[i*BytesPerBlock:(i+1)*BytesPerBlock]))), false})
 		}
 		sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
 		return entries, nil
@@ -112,7 +125,7 @@ func (d *Drive) dirFile(name string) (fs.File, error) {
 }
 
 func (d *Drive) readme() []byte {
-	return []byte(fmt.Sprintf("TU56/DECtape SIMH container image\nSource: %s\nBlocks: %d\nBlock format: %d 12-bit words stored as little-endian 16-bit words (%d bytes).\nUse 'sector /MOUNT N' for the original container block, or read blocks/NNNN.bin.\nOS/8 filesystem decoding is not yet implemented.\n", d.source, d.blocks, WordsPerBlock, BytesPerBlock))
+	return []byte(fmt.Sprintf("TU56/DECtape SIMH container image\nSource: %s\nBlocks: %d\nBlock format: %d 12-bit words stored as little-endian 16-bit words (%d bytes).\nUse 'sector /MOUNT N' for the original container block, or read blocks/NNNN.bin.\nRaw container view; omit -o raw to browse OS/8 files.\n", d.source, d.blocks, WordsPerBlock, BytesPerBlock))
 }
 
 func clean(name string) string {

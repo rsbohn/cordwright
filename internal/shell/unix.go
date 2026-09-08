@@ -21,7 +21,8 @@ const Help = `Cordwright — read-only Unix personality
   mount HOST-DIRECTORY /NAME     Mount a host folder read-only
   mount -t hawk [-stride 400|512] IMAGE /NAME
                                 Mount an experimental Hawk image read-only
-  mount -t tu56 IMAGE /NAME     Mount a TU56/DECtape container read-only
+  mount -t tu56 [-o raw] IMAGE /NAME
+                                Mount SIMH OS/8 files (raw: block view)
   text [--] FILE                Decode Hawk high-bit ASCII (lossy view)
   sectors [--] FILE             Show allocation-order sector numbers
   sector /NAME NUMBER           Hex dump image record (decimal or 0xHEX)
@@ -74,6 +75,9 @@ func (s *Unix) MountHawk(source, point string, stride int) error {
 }
 func (s *Unix) MountTU56(source, point string) error {
 	return s.mount(point, func() (media.Drive, error) { return media.OpenTU56(source) })
+}
+func (s *Unix) MountTU56Raw(source, point string) error {
+	return s.mount(point, func() (media.Drive, error) { return media.OpenTU56Raw(source) })
 }
 func (s *Unix) mount(point string, open func() (media.Drive, error)) error {
 	name, err := mountName(point)
@@ -174,8 +178,19 @@ func (s *Unix) Execute(args []string, out io.Writer) (bool, error) {
 				}
 				return false, s.MountHawk(args[0], args[1], stride)
 			case "tu56":
+				raw := false
+				if len(args) > 0 && args[0] == "-o" {
+					if len(args) < 2 || args[1] != "raw" {
+						return usage("mount -t tu56 [-o raw] IMAGE /NAME")
+					}
+					raw = true
+					args = args[2:]
+				}
 				if len(args) != 2 {
-					return usage("mount -t tu56 IMAGE /NAME")
+					return usage("mount -t tu56 [-o raw] IMAGE /NAME")
+				}
+				if raw {
+					return false, s.MountTU56Raw(args[0], args[1])
 				}
 				return false, s.MountTU56(args[0], args[1])
 			default:

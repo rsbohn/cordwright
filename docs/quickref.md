@@ -21,7 +21,8 @@ Or replace `./cordwright` with `go run ./cmd/cordwright`.
 | --- | --- |
 | `-host NAME=PATH` | Mount a host folder; repeatable |
 | `-hawk NAME=PATH` | Mount a Hawk image; repeatable |
-| `-tu56 NAME=PATH` | Mount a TU56/DECtape container image; repeatable |
+| `-tu56 NAME=PATH` | Mount SIMH OS/8 TU56 files; repeatable |
+| `-o raw` | Use the block view for all startup TU56 mounts |
 | `-stride 400` / `-stride 512` | Record size for all CLI Hawk mounts; default 512 |
 | `-personality unix` | Default and currently only personality |
 | `-batch` | Read command lines without prompting |
@@ -44,7 +45,8 @@ mount                               List mounted drives
 mount HOST-DIRECTORY /NAME           Mount a host folder read-only
 mount -t hawk IMAGE /NAME            Mount a Hawk image (512-byte stride)
 mount -t hawk -stride 400 IMAGE /NAME Mount a packed Hawk image
-mount -t tu56 IMAGE /NAME            Mount a TU56/DECtape container
+mount -t tu56 IMAGE /NAME            Mount SIMH OS/8 files read-only
+mount -t tu56 -o raw IMAGE /NAME     Mount the raw TU56 block view
 umount /NAME                        Unmount; does not alter the source
 pwd                                 Show virtual working directory
 cd [PATH]                           Change directory; no argument means /

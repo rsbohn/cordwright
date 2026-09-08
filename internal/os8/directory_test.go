@@ -1,4 +1,4 @@
-package main
+package os8
 
 import (
 	"bytes"
@@ -23,7 +23,7 @@ func fixture() []byte {
 func TestDirectory(t *testing.T) {
 	raw := fixture()
 	var out bytes.Buffer
-	if err := dump(&out, raw); err != nil {
+	if err := Dump(&out, raw); err != nil {
 		t.Fatal(err)
 	}
 	for _, want := range []string{"TEST.PA", "DATA.PA", "<FREE>"} {
@@ -71,7 +71,7 @@ func TestCorruption(t *testing.T) {
 		{"word", func(b []byte) []byte { b[1] = 255; return b }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if err := dump(&bytes.Buffer{}, tc.change(fixture())); err == nil {
+			if err := Dump(&bytes.Buffer{}, tc.change(fixture())); err == nil {
 				t.Fatal("accepted corruption")
 			}
 		})
