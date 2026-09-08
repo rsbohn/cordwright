@@ -10,7 +10,8 @@ blocks to filesystems and decoded content.
 Initial Go implementation: read-only host-folder drives, an experimental Hawk
 Disk6 driver, a synthetic Hawk image generator, and a Unix-style shell. Hawk
 layout knowledge comes from CPU6.dos in [tricorn](https://github.com/rsbohn/tricorn).
-Simple Hawk libraries are browsable as directories; tape drivers and persistent
+Simple Hawk libraries are browsable as directories. TU56/DECtape container images
+can be mounted for raw block inspection; OS/8 directory decoding and persistent
 mount tables are not yet implemented.
 
 See the [quick reference](docs/quickref.md) for commands and examples.
@@ -138,6 +139,9 @@ image capabilities, and host adapter. `internal/hawk` implements the Hawk driver
 and deterministic demo layout. `internal/shell` implements the Unix personality
 separately from the drivers. `cmd/cordwright` wires startup mounts and
 CLI/batch/interactive modes; `cmd/hawk-demo` generates synthetic fixtures.
+`internal/tu56` implements a raw TU56/DECtape container view (`README.txt` plus
+`blocks/NNNN.bin` and `blocks/NNNN.oct`); mount with `-tu56 NAME=PATH` or
+`mount -t tu56 IMAGE /NAME`.
 
 ## The workbench
 

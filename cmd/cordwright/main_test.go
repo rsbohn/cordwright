@@ -2,11 +2,13 @@ package main
 
 import (
 	"bytes"
-	"github.com/rsbohn/cordwright/internal/hawk"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/rsbohn/cordwright/internal/hawk"
+	"github.com/rsbohn/cordwright/internal/tu56"
 )
 
 func TestCLI(t *testing.T) {
@@ -55,6 +57,19 @@ func TestHawkCLI(t *testing.T) {
 	var out, diagnostics bytes.Buffer
 	code := run([]string{"-hawk", "h2=" + name, "-stride", "400", "text", "/h2/HELLO"}, strings.NewReader(""), &out, &diagnostics, false)
 	if code != 0 || out.String() != "HELLO FROM CORDWRIGHT!\n" {
+		t.Fatalf("%d %q %q", code, out.String(), diagnostics.String())
+	}
+}
+
+func TestTU56CLI(t *testing.T) {
+	image := make([]byte, tu56.BytesPerBlock)
+	name := filepath.Join(t.TempDir(), "demo.tu56")
+	if err := os.WriteFile(name, image, 0600); err != nil {
+		t.Fatal(err)
+	}
+	var out, diagnostics bytes.Buffer
+	code := run([]string{"-tu56", "t0=" + name, "ls", "/t0"}, strings.NewReader(""), &out, &diagnostics, false)
+	if code != 0 || out.String() != "README.txt\nblocks/\n" {
 		t.Fatalf("%d %q %q", code, out.String(), diagnostics.String())
 	}
 }

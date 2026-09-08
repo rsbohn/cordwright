@@ -21,6 +21,7 @@ const Help = `Cordwright — read-only Unix personality
   mount HOST-DIRECTORY /NAME     Mount a host folder read-only
   mount -t hawk [-stride 400|512] IMAGE /NAME
                                 Mount an experimental Hawk image read-only
+  mount -t tu56 IMAGE /NAME     Mount a TU56/DECtape container read-only
   text [--] FILE                Decode Hawk high-bit ASCII (lossy view)
   sectors [--] FILE             Show allocation-order sector numbers
   sector /NAME NUMBER           Hex dump image record (decimal or 0xHEX)
@@ -70,6 +71,9 @@ func (s *Unix) MountHost(source, point string) error {
 }
 func (s *Unix) MountHawk(source, point string, stride int) error {
 	return s.mount(point, func() (media.Drive, error) { return media.OpenHawk(source, stride) })
+}
+func (s *Unix) MountTU56(source, point string) error {
+	return s.mount(point, func() (media.Drive, error) { return media.OpenTU56(source) })
 }
 func (s *Unix) mount(point string, open func() (media.Drive, error)) error {
 	name, err := mountName(point)
@@ -152,23 +156,31 @@ func (s *Unix) Execute(args []string, out io.Writer) (bool, error) {
 			return false, nil
 		}
 		if len(args) >= 2 && args[0] == "-t" {
-			if args[1] != "hawk" {
-				return false, fmt.Errorf("unsupported mount type %q", args[1])
-			}
+			typ := args[1]
 			args = args[2:]
-			stride := 512
-			if len(args) >= 2 && args[0] == "-stride" {
-				n, err := strconv.Atoi(args[1])
-				if err != nil {
-					return false, err
+			switch typ {
+			case "hawk":
+				stride := 512
+				if len(args) >= 2 && args[0] == "-stride" {
+					n, err := strconv.Atoi(args[1])
+					if err != nil {
+						return false, err
+					}
+					stride = n
+					args = args[2:]
 				}
-				stride = n
-				args = args[2:]
+				if len(args) != 2 {
+					return usage("mount -t hawk [-stride 400|512] IMAGE /NAME")
+				}
+				return false, s.MountHawk(args[0], args[1], stride)
+			case "tu56":
+				if len(args) != 2 {
+					return usage("mount -t tu56 IMAGE /NAME")
+				}
+				return false, s.MountTU56(args[0], args[1])
+			default:
+				return false, fmt.Errorf("unsupported mount type %q", typ)
 			}
-			if len(args) != 2 {
-				return usage("mount -t hawk [-stride 400|512] IMAGE /NAME")
-			}
-			return false, s.MountHawk(args[0], args[1], stride)
 		}
 		if len(args) != 2 {
 			return usage("mount HOST-DIRECTORY /NAME")
